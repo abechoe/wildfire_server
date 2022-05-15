@@ -1,0 +1,9 @@
+<html>
+  <head>
+    <script type="application/javascript" src="js/application.js"></script>
+    <title>Wildfire Server</title>
+  </head>
+  <body>
+    <div id="info"></div>
+  </body>
+</html>
