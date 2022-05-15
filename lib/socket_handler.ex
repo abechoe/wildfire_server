@@ -12,7 +12,7 @@ defmodule WildfireServer.SocketHandler do
 
     resp =
       HTTPoison.get(
-        "https://services9.arcgis.com/RHVPKKiFTONKtxq3/ArcGIS/rest/services/USA_Wildfires_v1/FeatureServer/query?layerDefs=%5B%7B%22layerId%22%3A+0%2C+%22where%22%3A+%22IncidentName%3D%27San+Luis%27%22%7D%2C+%7B%22layerId%22%3A+1%2C+%22where%22%3A+%22IncidentName%3D%27San+Luis%27%22%7D%5D&geometry=&geometryType=esriGeometryEnvelope&inSR=&spatialRel=esriSpatialRelIntersects&outSR=&datumTransformation=&applyVCSProjection=false&returnGeometry=true&maxAllowableOffset=&geometryPrecision=&returnIdsOnly=false&returnCountOnly=false&returnDistinctValues=false&returnZ=false&returnM=false&sqlFormat=none&f=pjson&token="
+        "https://services9.arcgis.com/RHVPKKiFTONKtxq3/ArcGIS/rest/services/USA_Wildfires_v1/FeatureServer/query?layerDefs=%5B%7B%22layerId%22%3A+0%7D%2C+%7B%22layerId%22%3A+1%7D%5D&geometry=&geometryType=esriGeometryEnvelope&inSR=&spatialRel=esriSpatialRelIntersects&outSR=&datumTransformation=&applyVCSProjection=false&returnGeometry=true&maxAllowableOffset=&geometryPrecision=&returnIdsOnly=false&returnCountOnly=false&returnDistinctValues=false&returnZ=false&returnM=false&sqlFormat=none&f=pjson&token="
       )
 
     {:ok, %{body: body}} = resp
@@ -20,24 +20,37 @@ defmodule WildfireServer.SocketHandler do
 
     layers = Map.get(resp_json, "layers")
 
-    [layer1_wildfire, layer2_wildfire] =
+    [layer1_wildfires, layer2_wildfires] =
       Enum.map(layers, fn layer ->
-        %{"features" => [%{"attributes" => attributes, "geometry" => geometry}]} = layer
+        %{"features" => features} = layer
 
-        %{
-          irwin_id: Map.get(attributes, "IrwinID") || Map.get(attributes, "IRWINID"),
-          incident_name: Map.get(attributes, "IncidentName"),
-          geometry: geometry
-        }
+        features
       end)
 
     merged =
-      Map.merge(layer1_wildfire, layer2_wildfire, fn key, v1, v2 ->
-        case key do
-          :geometry -> [v1, v2]
-          _ -> v2
+      Enum.map(layer1_wildfires, fn wf ->
+        %{"attributes" => attributes_l1_wf} = wf
+
+        matching_wf =
+          Enum.find(layer2_wildfires, fn l2_wf ->
+            %{"attributes" => attributes_l2_wf} = l2_wf
+            Map.get(attributes_l2_wf, "IRWINID") == Map.get(attributes_l1_wf, "IrwinID")
+          end)
+
+        case matching_wf do
+          nil ->
+            %{}
+
+          _ ->
+            Map.merge(wf, matching_wf, fn key, v1, v2 ->
+              case key do
+                "geometry" -> [v1, v2]
+                _ -> v2
+              end
+            end)
         end
       end)
+      |> Enum.filter(fn wf -> Map.keys(wf) |> length > 0 end)
 
     {:ok, encoded} = Jason.encode(merged)
 
